@@ -26,7 +26,8 @@ void update_parameter(parameter_t *param) {
     Vector2 mp = GetMousePosition();
 
     if (inside_rect(param->rect, mp)) {
-        param->value += GetMouseWheelMove() * 0.25;
+
+        param->value += GetMouseWheelMove() *  (IsKeyDown(KEY_LEFT_CONTROL) ? 0.05 : 0.25);
 
         if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT))
             param->inc_by_time = !param->inc_by_time;
@@ -56,15 +57,41 @@ float get_parameter_value(parameter_t param, float time) {
 }
 
 
+typedef struct {
+    float r,g,b,a;
+} rgba_t;
+
+rgba_t color_to_rgba(Color color) {
+    return (rgba_t) {
+        (float)color.r / 255.0, 
+        (float)color.g / 255.0, 
+        (float)color.b / 255.0, 
+        (float)color.a / 255.0, 
+    };
+}
+
+
 int main(int argc, char **argv) {
     InitWindow(800, 600, "Math_Shapes!!");
 
 
-    const size_t a = 80; 
-    const size_t b = 80;
-    const size_t c = 80;
-    char *voxels = calloc(a * b * c, sizeof(char));
+    Color colors[] = {
+        (Color) { 0xe6, 0x7e, 0x80, 0xff },
+        (Color) { 0xa7, 0xc0, 0x80, 0xff },
+        (Color) { 0xdb, 0xbc, 0x7f, 0xff },
+        (Color) { 0x7f, 0xbb, 0xb3, 0xff },
+        (Color) { 0xd6, 0x99, 0xb6, 0xff },
+        (Color) { 0x83, 0xc0, 0x92, 0xff },
+    };
+#define COLORS_LEN (sizeof(colors) / sizeof(colors[0]))
+#define EMPTY_VOXEL (COLORS_LEN)
 
+
+#define SIZE 80
+    const size_t a = SIZE; 
+    const size_t b = SIZE;
+    const size_t c = SIZE;
+    char *voxels = calloc(a * b * c, sizeof(char));
 
     Vector3 zone_lbf = (Vector3) { -1, -1, -1 },
             zone_run = (Vector3) {  1,  1,  1 };
@@ -91,24 +118,20 @@ int main(int argc, char **argv) {
 
     shader.locs[SHADER_LOC_VECTOR_VIEW] = GetShaderLocation(shader, "viewPos");
     int fog_color                       = GetShaderLocation(shader, "fogColor");
-	float bg_rgba[4] = {
-            (float)BG.r / 255.0f,
-            (float)BG.g / 255.0f,
-            (float)BG.b / 255.0f,
-            (float)BG.a / 255.0f 
-        };
+    rgba_t fog_color_ = color_to_rgba(BG);
+    int voxel_color                     = GetShaderLocation(shader, "voxelColor");
 
-    SetShaderValue(shader, fog_color, &bg_rgba, SHADER_UNIFORM_VEC4);
+    SetShaderValue(shader, fog_color, &fog_color_.r, SHADER_UNIFORM_VEC4);
 
-    double time = 0;
 
-    parameter_t p_A = make_parameter("A");
-    parameter_t p_B = make_parameter("B");
-    parameter_t p_C = make_parameter("C");
-    parameter_t p_R = make_parameter("R");
+    parameter_t p_A   = make_parameter("A");
+    parameter_t p_B   = make_parameter("B");
+    parameter_t p_C   = make_parameter("C");
+    parameter_t p_R   = make_parameter("R");
     parameter_t p_x_0 = make_parameter("x_0");
     parameter_t p_y_0 = make_parameter("y_0");
     parameter_t p_z_0 = make_parameter("z_0");
+    parameter_t p_lw  = make_parameter("lw*10");
 
     p_A.rect.x = 10.;
     p_B.rect.x = 10. + PARAM_WIDTH + 10.;
@@ -123,19 +146,33 @@ int main(int argc, char **argv) {
     p_x_0.rect.x = 10.;
     p_y_0.rect.x = 10. + PARAM_WIDTH + 10.;
     p_z_0.rect.x = 10. + PARAM_WIDTH * 2 + 10. * 2;
+    p_lw.rect.x  = 10. + PARAM_WIDTH * 3 + 10. * 3;
 
     p_x_0.rect.y = 10. + PARAM_HEIGHT + 10.;
     p_y_0.rect.y = 10. + PARAM_HEIGHT + 10.;
     p_z_0.rect.y = 10. + PARAM_HEIGHT + 10.;
+    p_lw.rect.y  = 10. + PARAM_HEIGHT + 10.;
 
-    p_x_0.value= 0.;
-    p_y_0.value= 0.;
-    p_z_0.value= 0.;
+    p_x_0.value = 0.;
+    p_y_0.value = 0.;
+    p_z_0.value = 0.;
+    p_lw.value  =  0.25;
 
+
+
+
+    double time     = 0;
+    int hide_ui     = 0;
+    int camera_move = 0;
 
     SetTargetFPS(30);
     while (!WindowShouldClose()) {
         time += GetFrameTime();
+
+        if (IsKeyPressed(KEY_P)) {
+            hide_ui = !hide_ui;
+        }
+
 
         update_parameter(&p_A);
         update_parameter(&p_B);
@@ -144,6 +181,7 @@ int main(int argc, char **argv) {
         update_parameter(&p_x_0);
         update_parameter(&p_y_0);
         update_parameter(&p_z_0);
+        update_parameter(&p_lw);
 
         for (size_t z = 0; z < c; z++)
         for (size_t y = 0; y < b; y++)
@@ -152,20 +190,24 @@ int main(int argc, char **argv) {
             float _y = zone_lbf.y + (zone_run.y - zone_lbf.y ) / (float)b * (float)y;
             float _z = zone_lbf.z + (zone_run.z - zone_lbf.z ) / (float)c * (float)z;
 
-            float A   = get_parameter_value(p_A, time);
-            float B   = get_parameter_value(p_B, time);
-            float C   = get_parameter_value(p_C, time);
-            float R   = get_parameter_value(p_R, time);
+            float A   = get_parameter_value(p_A,   time);
+            float B   = get_parameter_value(p_B,   time);
+            float C   = get_parameter_value(p_C,   time);
+            float R   = get_parameter_value(p_R,   time);
             float x_0 = get_parameter_value(p_x_0, time);
             float y_0 = get_parameter_value(p_y_0, time);
             float z_0 = get_parameter_value(p_z_0, time);
+            float lw  = fabsf(get_parameter_value(p_lw,  time))/10.+0.02;
 
             float F_xyz = 
                 (_x - x_0) * (_x - x_0) * A +
                 (_y - y_0) * (_y - y_0) * B +
                 (_z - z_0) * (_z - z_0) * C - R * R;
 
-            *voxelsat(x, y, z) = (fabsf(F_xyz) < 0.04) ? 1 : 0;
+            float dist   = _x*_x + _y*_y + _z*_z;
+            size_t color = (size_t)(dist * 2.0f / 3.0f * (COLORS_LEN-1)) % COLORS_LEN;
+
+            *voxelsat(x, y, z) = (fabsf(F_xyz) <= lw) ? color : EMPTY_VOXEL;
         }
 
 
@@ -188,6 +230,14 @@ int main(int argc, char **argv) {
                                        dm.y * 0.004);
         }
 
+        if (IsKeyPressed(KEY_M)) {
+            camera_move = !camera_move;
+        }
+        if (camera_move) {
+            camera.position = Vector3RotateByAxisAngle(camera.position,
+                                   (Vector3){ 0, 0, 1 }, 0.05);
+        }
+
         SetShaderValue(shader,
                        shader.locs[SHADER_LOC_VECTOR_VIEW],
                        &camera.position.x, SHADER_UNIFORM_VEC3);
@@ -199,7 +249,7 @@ int main(int argc, char **argv) {
             for (size_t z = 0; z < c; z++)
             for (size_t y = 0; y < b; y++)
             for (size_t x = 0; x < a; x++) {
-                if (*voxelsat(x, y, z) == 0) continue;
+                if (*voxelsat(x, y, z) == EMPTY_VOXEL) continue;
 
                 Vector3 size     = (Vector3) {
                     (zone_run.x - zone_lbf.x ) / (float)a,
@@ -211,7 +261,13 @@ int main(int argc, char **argv) {
                     zone_lbf.y + size.y * (float)y,
                     zone_lbf.z + size.z * (float)z
                 };
-                DrawModel(cube, position, 1., FG);
+
+                rgba_t color = color_to_rgba(colors[*voxelsat(x, y, z)]);
+                //rgba_t color = color_to_rgba(BG);
+                SetShaderValue(shader, voxel_color, &color.r, SHADER_UNIFORM_VEC4);
+
+                //DrawModel(cube, position, 1., colors[*voxelsat(x, y, z)]);
+                DrawModel(cube, position, 1., colors[*voxelsat(x, y, z)]);
             }
             EndShaderMode();
 
@@ -235,13 +291,16 @@ int main(int argc, char **argv) {
 
         EndMode3D();
 
-        draw_parameter(p_A);
-        draw_parameter(p_B);
-        draw_parameter(p_C);
-        draw_parameter(p_R);
-        draw_parameter(p_x_0);
-        draw_parameter(p_y_0);
-        draw_parameter(p_z_0);
+        if (!hide_ui) {
+            draw_parameter(p_A);
+            draw_parameter(p_B);
+            draw_parameter(p_C);
+            draw_parameter(p_R);
+            draw_parameter(p_x_0);
+            draw_parameter(p_y_0);
+            draw_parameter(p_z_0);
+            draw_parameter(p_lw);
+		}
 
         EndDrawing();
     }
