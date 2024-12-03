@@ -87,7 +87,7 @@ int main(int argc, char **argv) {
 #define EMPTY_VOXEL (COLORS_LEN)
 
 
-#define SIZE 80
+#define SIZE 30
     const size_t a = SIZE; 
     const size_t b = SIZE;
     const size_t c = SIZE;
@@ -159,11 +159,9 @@ int main(int argc, char **argv) {
     p_lw.value  =  0.25;
 
 
-
-
-    double time     = 0;
-    int hide_ui     = 0;
-    int camera_move = 0;
+    double time        = 0;
+    int    hide_ui     = 0;
+    int    camera_move = 0;
 
     SetTargetFPS(30);
     while (!WindowShouldClose()) {
